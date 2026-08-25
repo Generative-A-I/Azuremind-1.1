@@ -1,4 +1,5 @@
 export type EffortLevel = 'Extra' | 'High' | 'Normal' | 'Low'
+export type AzuremindVersion = '1.0' | '1.1' | '1.2' | '2.0'
 
 export type Message = {
   id: string
@@ -6,6 +7,13 @@ export type Message = {
   content: string
   thinking?: string
   createdAt: string
+}
+
+export type AttachmentPayload = {
+  name: string
+  type: string
+  contents?: string
+  dataUrl?: string
 }
 
 export type Conversation = {

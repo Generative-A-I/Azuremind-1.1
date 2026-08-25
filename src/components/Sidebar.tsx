@@ -1,4 +1,4 @@
-import { KeyRound, MessageSquarePlus, Settings2, ShieldCheck, Trash2 } from 'lucide-react'
+import { Code2, KeyRound, MessageSquarePlus, Settings2, ShieldCheck, Trash2 } from 'lucide-react'
 import type { Conversation } from '../types'
 
 type Props = {
@@ -10,11 +10,14 @@ type Props = {
   onSelectChat: (id: string) => void
   onDeleteChat: (id: string) => void
   onClearHistory: () => void
+  product: 'chat' | 'code'
+  onProductChange: (product: 'chat' | 'code') => void
 }
 
-export function Sidebar({ conversations, activeId, apiKey, onApiKeyChange, onNewChat, onSelectChat, onDeleteChat, onClearHistory }: Props) {
+export function Sidebar({ conversations, activeId, apiKey, onApiKeyChange, onNewChat, onSelectChat, onDeleteChat, onClearHistory, product, onProductChange }: Props) {
   return <aside className="sidebar">
-    <div className="brand"><div className="brand-mark">A<span>+</span></div><div><strong>Azuremind</strong><small>Workspace</small></div></div>
+    <div className="brand"><div className="brand-mark cobalt-mark">C<span /></div><div><strong>Cobalt AI</strong><small>Workspace</small></div></div>
+    <button className={`product-switch ${product === 'chat' ? 'active' : ''}`} onClick={() => onProductChange('chat')}><span className="product-icon cobalt-mark small">C<span /></span><span><strong>Cobalt AI</strong><small>Chat workspace</small></span></button><button className={`product-switch ${product === 'code' ? 'active' : ''}`} onClick={() => onProductChange('code')}><span className="product-icon code-mark"><Code2 size={15} /></span><span><strong>Cobalt Code</strong><small>Developer workspace</small></span></button>
     <button className="new-chat" onClick={onNewChat}><MessageSquarePlus size={17} /> New conversation <span>⌘ K</span></button>
     <div className="side-section history-section">
       <div className="section-heading"><span>Recent conversations</span><span className="count">{conversations.length}</span></div>
@@ -32,7 +35,7 @@ export function Sidebar({ conversations, activeId, apiKey, onApiKeyChange, onNew
       </section>
       <button className="side-action" onClick={() => document.querySelector<HTMLButtonElement>('.user-chip')?.click()}><Settings2 size={16} /> Workspace settings</button>
       <button className="side-action danger" onClick={onClearHistory}><Trash2 size={16} /> Clear chat history</button>
-      <div className="workspace-meta"><span>AZUREMIND 1.1</span><span>v1.0.0</span></div>
+      <div className="workspace-meta"><span>COBALT AI</span><span>v1.0.0</span></div>
     </div>
   </aside>
 }

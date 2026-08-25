@@ -31,6 +31,12 @@ export default defineConfig(({ mode }) => {
   return {
   plugins: [react()],
   define: { __AZUREMIND_SERVER_CONFIGURED__: JSON.stringify(Boolean(serverKey)) },
+  configureServer(server: any) {
+    server.middlewares.use((request: any, _response: any, next: () => void) => {
+      if (request.url?.startsWith('/api/')) console.info(`[azuremind api] ${request.method} ${request.url}`)
+      next()
+    })
+  },
   server: {
     proxy: {
       '/api/azuremind-models': {
