@@ -33,7 +33,11 @@ function historySnapshot(conversations: Conversation[]): Conversation[] { return
 function persistConversations(conversations: Conversation[]) {
   const snapshot = historySnapshot(conversations)
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot)); return } catch (error) { console.warn('[Cobalt history] compacting oversized local history', error) }
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot.slice(0, 10).map((conversation) => ({ ...conversation, messages: conversation.messages.slice(-30) }))); return } catch (error) { console.error('[Cobalt history] could not persist local history', error) }
+  try {
+    const reducedSnapshot = snapshot.slice(0, 10).map((conversation) => ({ ...conversation, messages: conversation.messages.slice(-30) }))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(reducedSnapshot))
+    return
+  } catch (error) { console.error('[Cobalt history] could not persist local history', error) }
 }
 let puterLoad: Promise<NonNullable<Window['puter']>> | null = null
 function loadPuter(): Promise<NonNullable<Window['puter']>> {
