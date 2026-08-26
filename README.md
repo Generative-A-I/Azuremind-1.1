@@ -38,6 +38,16 @@ Open the URL printed by Vite, usually:
 http://localhost:5173/
 ```
 
+If the browser says the server cannot be found:
+
+1. Run `npm install` from the project root, then run `npm run dev -- --host 0.0.0.0`.
+2. Open the exact URL printed by Vite. The normal local URL is `http://localhost:5173/`; a forwarded Codespaces URL may look different.
+	In Codespaces, open the **Ports** panel, find port `5173`, and choose **Open in Browser**. Do not reuse an old `*.app.github.dev` link after restarting or recreating the Codespace; old forwarded hostnames can return `HTTP 404` even while the local server is healthy.
+	If the port is private, run `gh codespace ports visibility 5173:public -c "$CODESPACE_NAME"`, then reopen the browse URL shown by `gh codespace ports -c "$CODESPACE_NAME"`.
+3. Confirm the terminal still shows `VITE ready` and has not returned to a shell prompt. Stop stale processes with `Ctrl+C` before restarting.
+4. If the page loads but model discovery reports `401 Invalid API Key`, check `.env` contains a current `GROQ_API_KEY`, remove accidental quotes or spaces, and restart Vite after changing it. Never paste the key into the browser or commit `.env`.
+5. If Vite reports a missing native `rolldown` binding, run `npm install` again. If that does not repair it, remove `node_modules` and `package-lock.json`, run `npm install`, and start the server again.
+
 ## Production preview
 
 Build the app:
@@ -65,10 +75,11 @@ For PWA installation, use the production preview over HTTPS or localhost. The br
 - **History:** Conversations are stored locally in the browser and can be deleted individually or cleared together.
 - **Settings:** Configure dark mode, the default Cobalt version, and an additional system prompt.
 - **PWA:** Includes a manifest, Cobalt icons, service-worker caching, offline history access, and update handling.
+- **Account access:** The workspace requires onboarding and has no guest mode. Developer-owned email lists in `src/App.tsx` control Beta Tester benefits and the private Dev model. Replace the placeholder addresses in `BETA_TESTER_EMAILS` and `DEVELOPER_EMAILS` with real addresses before sharing the app.
 
 ## Security notes
 
-The API key in `.env` is a server-side development credential. If a key has been shared publicly, rotate it immediately. Local account settings and chat history are browser-local demo storage, not a production authentication system.
+The API key in `.env` is a server-side development credential. If a key has been shared publicly, rotate it immediately. Account settings, access lists, passwords, and chat history are browser-local demo storage; this is not production authentication or authorization. The beta and developer allowlists are visible in the client bundle, so use a real backend identity service before treating these entitlements as secure.
 
 ## Useful commands
 
