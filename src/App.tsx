@@ -15,6 +15,7 @@ const API_KEY_STORAGE = 'azuremind-groq-key'
 const ACCOUNT_STORAGE = 'azuremind-account'
 const MODEL_CANDIDATES = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.6-27b', 'openai/gpt-oss-safeguard-20b']
 const VISION_MODEL_CANDIDATES = ['qwen/qwen3.6-27b']
+const IMAGE_MODEL = 'gpt-image-1'
 const MODEL_BY_VERSION: Record<AzuremindVersion, string> = { '1.0': 'openai/gpt-oss-safeguard-20b', '1.1': 'openai/gpt-oss-120b', '1.2': 'qwen/qwen3.6-27b', '2.0': 'openai/gpt-oss-20b', dev: 'openai/gpt-oss-120b' }
 const CODE_MODEL_BY_VERSION: Record<AzuremindVersion, string> = { '1.0': 'qwen/qwen3.6-27b', '1.1': 'openai/gpt-oss-120b', '1.2': 'openai/gpt-oss-20b', '2.0': 'qwen/qwen3.6-27b', dev: 'openai/gpt-oss-120b' }
 const BETA_TESTER_EMAILS = ['chopp2979@inst.hcpss.org']
@@ -28,6 +29,12 @@ const identityPrompt = 'You are Cobalt AI, an independent AI application. You ar
 
 function formatTime(date = new Date()) { return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
 function readConversations(): Conversation[] { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') } catch { return [] } }
+function historySnapshot(conversations: Conversation[]): Conversation[] { return conversations.map((conversation) => ({ ...conversation, messages: conversation.messages.map((message) => message.imageUrl ? { ...message, content: 'Generated image (available in this session only).', imageUrl: undefined } : message) })) }
+function persistConversations(conversations: Conversation[]) {
+  const snapshot = historySnapshot(conversations)
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot)); return } catch (error) { console.warn('[Cobalt history] compacting oversized local history', error) }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot.slice(0, 10).map((conversation) => ({ ...conversation, messages: conversation.messages.slice(-30) }))); return } catch (error) { console.error('[Cobalt history] could not persist local history', error) }
+}
 let puterLoad: Promise<NonNullable<Window['puter']>> | null = null
 function loadPuter(): Promise<NonNullable<Window['puter']>> {
   if (window.puter?.ai?.txt2img) return Promise.resolve(window.puter)
@@ -45,6 +52,12 @@ function loadPuter(): Promise<NonNullable<Window['puter']>> {
     document.head.appendChild(script)
   })
   return puterLoad
+}
+async function resolveImageUrl(result: Blob | HTMLImageElement | string | { src?: string; url?: string } | undefined): Promise<string | null> {
+  if (typeof result === 'string') return result || null
+  if (result instanceof Blob) return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(result) })
+  if (result instanceof HTMLImageElement) return result.src || null
+  return result?.src || result?.url || null
 }
 function accessForEmail(email: string) {
   const normalized = email.trim().toLowerCase()
@@ -101,7 +114,7 @@ export default function App() {
   const access = accessForEmail(account?.email || '')
   access.isDeveloper = developerEmails.includes(account?.email.trim().toLowerCase() || '')
   access.isBetaTester = access.isDeveloper || betaEmails.includes(account?.email.trim().toLowerCase() || '')
-  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations)) }, [conversations])
+  useEffect(() => { persistConversations(conversations) }, [conversations])
   useEffect(() => { const captureInstall = (event: Event) => { event.preventDefault(); setInstallPrompt(event as BeforeInstallPromptEvent) }; window.addEventListener('beforeinstallprompt', captureInstall); return () => window.removeEventListener('beforeinstallprompt', captureInstall) }, [])
   useEffect(() => { localStorage.setItem('cobalt-dark-mode', String(darkMode)); localStorage.setItem('cobalt-default-model', defaultModel); localStorage.setItem('cobalt-system-prompt', systemPrompt) }, [darkMode, defaultModel, systemPrompt])
   useEffect(() => { localStorage.setItem('cobalt-style', style); localStorage.setItem(BETA_LIST_STORAGE, JSON.stringify(betaEmails)); localStorage.setItem(DEV_LIST_STORAGE, JSON.stringify(developerEmails)); document.body.dataset.style = style }, [style, betaEmails, developerEmails])
@@ -195,7 +208,7 @@ export default function App() {
   }
   const clearHistory = () => { setConversations([]); setActiveId('') }
   const deleteChat = (id: string) => { console.info('[Azuremind chats] deleting conversation:', id); setConversations((current) => current.filter((conversation) => conversation.id !== id)); if (id === activeId) setActiveId('') }
-  const generateImage = async (prompt: string) => { const conversationId = activeId || crypto.randomUUID(); const userMessage: Message = { id: crypto.randomUUID(), role: 'user', content: `Create an image: ${prompt}`, createdAt: formatTime() }; setConversations((current) => activeId ? current.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: [...conversation.messages, userMessage] } : conversation) : [{ id: conversationId, title: `Image: ${prompt.slice(0, 28)}`, updatedAt: 'Just now', messages: [userMessage] }, ...current]); if (!activeId) setActiveId(conversationId); try { const puter = await loadPuter(); const result = await puter.ai?.txt2img?.(prompt); const imageUrl = typeof result === 'string' ? result : result instanceof HTMLImageElement ? result.src : result?.src || result?.url; if (!imageUrl) throw new Error('Puter.js returned no image URL. Complete Puter sign-in if prompted.'); setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: [...conversation.messages, { id: crypto.randomUUID(), role: 'assistant', content: `![Generated image](${imageUrl})`, imageUrl, createdAt: formatTime() }] } : conversation)) } catch (error) { console.error('[Cobalt image generation]', error); const reason = error instanceof Error ? error.message : 'Puter rejected the image request.'; setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: [...conversation.messages, { id: crypto.randomUUID(), role: 'assistant', content: `Image generation could not start: ${reason}`, createdAt: formatTime() }] } : conversation)) } }
+  const generateImage = async (prompt: string) => { const conversationId = activeId || crypto.randomUUID(); const userMessage: Message = { id: crypto.randomUUID(), role: 'user', content: `Create an image: ${prompt}`, createdAt: formatTime() }; setConversations((current) => activeId ? current.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: [...conversation.messages, userMessage] } : conversation) : [{ id: conversationId, title: `Image: ${prompt.slice(0, 28)}`, updatedAt: 'Just now', messages: [userMessage] }, ...current]); if (!activeId) setActiveId(conversationId); try { const puter = await loadPuter(); const result = await puter.ai?.txt2img?.(prompt, { model: IMAGE_MODEL }); const imageUrl = await resolveImageUrl(result); if (!imageUrl) throw new Error('Puter.js returned no image data. Complete Puter sign-in if prompted.'); setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: [...conversation.messages, { id: crypto.randomUUID(), role: 'assistant', content: `![Generated image](${imageUrl})`, imageUrl, createdAt: formatTime() }] } : conversation)) } catch (error) { console.error('[Cobalt image generation]', error); const reason = error instanceof Error ? error.message : 'Puter rejected the image request.'; setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: [...conversation.messages, { id: crypto.randomUUID(), role: 'assistant', content: `Image generation could not start: ${reason}`, createdAt: formatTime() }] } : conversation)) } }
   const saveAccount = (next: { name: string; email: string }) => { setAccount(next); localStorage.setItem(ACCOUNT_STORAGE, JSON.stringify(next)); setWalkthroughOpen(true); setAccountOpen(false) }
   const completeWalkthrough = () => { localStorage.setItem(TOUR_STORAGE, 'true'); setWalkthroughOpen(false) }
   const addEmail = (kind: 'beta' | 'developer', email: string) => { const normalized = email.trim().toLowerCase(); if (!normalized.includes('@')) return; const setter = kind === 'beta' ? setBetaEmails : setDeveloperEmails; setter((current) => current.includes(normalized) ? current : [...current, normalized]) }
