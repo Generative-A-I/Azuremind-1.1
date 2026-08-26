@@ -7,6 +7,7 @@ import { OfflineBanner } from './components/OfflineBanner'
 import { OnboardingPanel } from './components/OnboardingPanel'
 import { Sidebar } from './components/Sidebar'
 import { SettingsPanel } from './components/SettingsPanel'
+import { WalkthroughPanel } from './components/WalkthroughPanel'
 import type { AttachmentPayload, AzuremindVersion, Conversation, EffortLevel, Message } from './types'
 
 const STORAGE_KEY = 'azuremind-conversations'
@@ -18,11 +19,33 @@ const MODEL_BY_VERSION: Record<AzuremindVersion, string> = { '1.0': 'openai/gpt-
 const CODE_MODEL_BY_VERSION: Record<AzuremindVersion, string> = { '1.0': 'qwen/qwen3.6-27b', '1.1': 'openai/gpt-oss-120b', '1.2': 'openai/gpt-oss-20b', '2.0': 'qwen/qwen3.6-27b', dev: 'openai/gpt-oss-120b' }
 const BETA_TESTER_EMAILS = ['chopp2979@inst.hcpss.org']
 const DEVELOPER_EMAILS = ['owall4229@inst.hcpss.org']
-const effortDescriptions: Record<EffortLevel, string> = { Extra: 'Be thorough but focused. Use concise reasoning summaries, not private chain-of-thought. Keep the answer under 700 words unless the user asks for detail.', High: 'Be clear and useful but concise. Keep the answer under 450 words unless the user asks for detail.', Normal: 'Give a concise, direct answer, normally under 250 words.', Low: 'Give only the direct answer, normally under 120 words.' }
+const BETA_LIST_STORAGE = 'cobalt-beta-testers'
+const DEV_LIST_STORAGE = 'cobalt-developers'
+const TOUR_STORAGE = 'cobalt-walkthrough-complete'
+const USAGE_STORAGE = 'cobalt-model-usage'
+const effortDescriptions: Record<EffortLevel, string> = { 'Deep Think': 'Use the largest available response budget. Work through the problem carefully, verify the result, and continue until the task is complete or the provider rate-limits the request. Provide a concise reasoning summary, never private chain-of-thought.', Extra: 'Be thorough but focused. Use concise reasoning summaries, not private chain-of-thought. Keep the answer under 700 words unless the user asks for detail.', High: 'Be clear and useful but concise. Keep the answer under 450 words unless the user asks for detail.', Normal: 'Give a concise, direct answer, normally under 250 words.', Low: 'Give only the direct answer, normally under 120 words.' }
 const identityPrompt = 'You are Cobalt AI, an independent AI application. You are not made by, owned by, or developed by Microsoft, Azure, OpenAI, or Groq. Do not invent a company origin, parameter count, training data, knowledge cutoff, compliance certification, or product architecture. When asked about your identity, say you are Cobalt AI running on a configured language model service, and clearly distinguish Cobalt AI from the underlying provider model.'
 
 function formatTime(date = new Date()) { return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
 function readConversations(): Conversation[] { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') } catch { return [] } }
+let puterLoad: Promise<NonNullable<Window['puter']>> | null = null
+function loadPuter(): Promise<NonNullable<Window['puter']>> {
+  if (window.puter?.ai?.txt2img) return Promise.resolve(window.puter)
+  if (puterLoad) return puterLoad
+  puterLoad = new Promise((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>('script[data-puter]')
+    if (existing && !window.puter?.ai?.txt2img) existing.remove()
+    const script = document.createElement('script')
+    const timeout = window.setTimeout(() => { puterLoad = null; reject(new Error('Puter.js took too long to load. Check your network or content blocker.')) }, 15000)
+    const finish = () => { window.clearTimeout(timeout); window.setTimeout(() => { if (window.puter?.ai?.txt2img) resolve(window.puter); else { puterLoad = null; reject(new Error('Puter.js loaded without its image API.')) } }, 100) }
+    script.addEventListener('load', finish, { once: true })
+    script.addEventListener('error', () => { window.clearTimeout(timeout); puterLoad = null; reject(new Error('Puter.js could not load. Check your network or content blocker.')) }, { once: true })
+    script.src = '/puter-sdk'
+    script.dataset.puter = 'true'
+    document.head.appendChild(script)
+  })
+  return puterLoad
+}
 function accessForEmail(email: string) {
   const normalized = email.trim().toLowerCase()
   const isDeveloper = DEVELOPER_EMAILS.includes(normalized)
@@ -69,12 +92,20 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [product, setProduct] = useState<'chat' | 'code'>('chat')
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
+  const [style, setStyle] = useState<'classic' | 'modern'>(() => (localStorage.getItem('cobalt-style') as 'classic' | 'modern') || 'classic')
+  const [betaEmails, setBetaEmails] = useState<string[]>(() => JSON.parse(localStorage.getItem(BETA_LIST_STORAGE) || JSON.stringify(BETA_TESTER_EMAILS)))
+  const [developerEmails, setDeveloperEmails] = useState<string[]>(() => JSON.parse(localStorage.getItem(DEV_LIST_STORAGE) || JSON.stringify(DEVELOPER_EMAILS)))
+  const [walkthroughOpen, setWalkthroughOpen] = useState(() => Boolean(localStorage.getItem(ACCOUNT_STORAGE)) && localStorage.getItem(TOUR_STORAGE) !== 'true')
 
   const activeConversation = conversations.find((conversation) => conversation.id === activeId) || { id: '', title: '', updatedAt: '', messages: [] }
   const access = accessForEmail(account?.email || '')
+  access.isDeveloper = developerEmails.includes(account?.email.trim().toLowerCase() || '')
+  access.isBetaTester = access.isDeveloper || betaEmails.includes(account?.email.trim().toLowerCase() || '')
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations)) }, [conversations])
   useEffect(() => { const captureInstall = (event: Event) => { event.preventDefault(); setInstallPrompt(event as BeforeInstallPromptEvent) }; window.addEventListener('beforeinstallprompt', captureInstall); return () => window.removeEventListener('beforeinstallprompt', captureInstall) }, [])
   useEffect(() => { localStorage.setItem('cobalt-dark-mode', String(darkMode)); localStorage.setItem('cobalt-default-model', defaultModel); localStorage.setItem('cobalt-system-prompt', systemPrompt) }, [darkMode, defaultModel, systemPrompt])
+  useEffect(() => { localStorage.setItem('cobalt-style', style); localStorage.setItem(BETA_LIST_STORAGE, JSON.stringify(betaEmails)); localStorage.setItem(DEV_LIST_STORAGE, JSON.stringify(developerEmails)); document.body.dataset.style = style }, [style, betaEmails, developerEmails])
+  useEffect(() => { const handleStyle = () => setStyle((localStorage.getItem('cobalt-style') as 'classic' | 'modern') || 'classic'); const handleAccess = () => { setBetaEmails(JSON.parse(localStorage.getItem(BETA_LIST_STORAGE) || JSON.stringify(BETA_TESTER_EMAILS))); setDeveloperEmails(JSON.parse(localStorage.getItem(DEV_LIST_STORAGE) || JSON.stringify(DEVELOPER_EMAILS))) }; const handleImage = (event: Event) => { void generateImage((event as CustomEvent<string>).detail) }; window.addEventListener('cobalt-style-changed', handleStyle); window.addEventListener('cobalt-access-changed', handleAccess); window.addEventListener('cobalt-generate-image', handleImage); return () => { window.removeEventListener('cobalt-style-changed', handleStyle); window.removeEventListener('cobalt-access-changed', handleAccess); window.removeEventListener('cobalt-generate-image', handleImage) } }, [])
   useEffect(() => { if (apiKey) localStorage.setItem(API_KEY_STORAGE, apiKey); else localStorage.removeItem(API_KEY_STORAGE) }, [apiKey])
   useEffect(() => {
     if (!online) return
@@ -111,7 +142,7 @@ export default function App() {
         const headers: HeadersInit = { 'Content-Type': 'application/json' }
         console.info('[Azuremind send] requesting model:', candidate)
         const userContent = attachment?.dataUrl ? [{ type: 'text', text: text || `Please analyze the attached image ${attachment.name}.` }, { type: 'image_url', image_url: { url: attachment.dataUrl } }] : attachment?.contents ? `${text}\n\n[Attached file: ${attachment.name}]\n${attachment.contents}` : text
-        const response = await fetch('/api/azuremind', { method: 'POST', headers, body: JSON.stringify({ model: candidate, temperature: 0.3, stream: true, messages: [{ role: 'system', content: `${identityPrompt} You are Cobalt ${product === 'code' ? 'Code' : 'AI'} ${version}. ${product === 'code' ? 'You are a precise senior software engineer. Prioritize correct, runnable code, explain tradeoffs, preserve existing APIs, and use fenced code blocks with language labels.' : ''} ${effortDescriptions[effort]} ${systemPrompt}` }, ...activeConversation.messages.map(({ role, content }) => ({ role, content })), { role: 'user', content: userContent }] }) })
+        const response = await fetch('/api/azuremind', { method: 'POST', headers, body: JSON.stringify({ model: candidate, temperature: 0.3, ...(effort === 'Deep Think' ? { max_tokens: 6000, reasoning_effort: 'high' } : { max_tokens: 4096 }), stream: true, messages: [{ role: 'system', content: `${identityPrompt} You are Cobalt ${product === 'code' ? 'Code' : 'AI'} ${version}. ${product === 'code' ? 'You are a precise senior software engineer. Prioritize correct, runnable code, explain tradeoffs, preserve existing APIs, and use fenced code blocks with language labels.' : ''} ${effortDescriptions[effort]} ${systemPrompt}` }, ...activeConversation.messages.map(({ role, content }) => ({ role, content })), { role: 'user', content: userContent }] }) })
         console.info('[Azuremind send] response received:', { model: candidate, status: response.status, ok: response.ok })
         if (response.ok) {
           const assistantId = crypto.randomUUID()
@@ -147,12 +178,16 @@ export default function App() {
           const finalAssistant = { content, thinking: thinking || undefined }
           setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: conversation.messages.map((message) => message.id === assistantId ? { ...message, ...finalAssistant } : message) } : conversation))
           console.info('[Cobalt AI send] stream complete:', { model: candidate, contentLength: content.length, thinkingLength: thinking.length })
+          let usage: Record<string, number> = {}
+          try { usage = JSON.parse(localStorage.getItem(USAGE_STORAGE) || '{}') } catch { usage = {} }
+          usage[candidate] = (usage[candidate] || 0) + 1
+          localStorage.setItem(USAGE_STORAGE, JSON.stringify(usage))
           completed = true
           setModelId(candidate)
           break
         }
         const details = await response.text(); lastError = `model=${candidate} status=${response.status} ${details}`; console.error('[Azuremind request]', lastError)
-        if (response.status !== 404 || !details.includes('model_not_found')) throw new Error(`Azuremind request failed (${response.status})`)
+        if (![404, 408, 409, 413, 429, 500, 502, 503, 504].includes(response.status) || (response.status === 404 && !details.includes('model_not_found'))) throw new Error(`Azuremind request failed (${response.status})`)
       }
       if (!completed) throw new Error(`No supported Azuremind model was available. ${lastError}`)
     } catch (error) { console.error('[Azuremind chat]', error); setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: [...conversation.messages, { id: crypto.randomUUID(), role: 'assistant', content: 'Azuremind could not complete that request. Verify the workspace connection key and your network, then try again.', createdAt: formatTime() }] } : conversation)) }
@@ -160,9 +195,14 @@ export default function App() {
   }
   const clearHistory = () => { setConversations([]); setActiveId('') }
   const deleteChat = (id: string) => { console.info('[Azuremind chats] deleting conversation:', id); setConversations((current) => current.filter((conversation) => conversation.id !== id)); if (id === activeId) setActiveId('') }
-  const saveAccount = (next: { name: string; email: string }) => { setAccount(next); localStorage.setItem(ACCOUNT_STORAGE, JSON.stringify(next)); setAccountOpen(false) }
+  const generateImage = async (prompt: string) => { const conversationId = activeId || crypto.randomUUID(); const userMessage: Message = { id: crypto.randomUUID(), role: 'user', content: `Create an image: ${prompt}`, createdAt: formatTime() }; setConversations((current) => activeId ? current.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: [...conversation.messages, userMessage] } : conversation) : [{ id: conversationId, title: `Image: ${prompt.slice(0, 28)}`, updatedAt: 'Just now', messages: [userMessage] }, ...current]); if (!activeId) setActiveId(conversationId); try { const puter = await loadPuter(); const result = await puter.ai?.txt2img?.(prompt); const imageUrl = typeof result === 'string' ? result : result instanceof HTMLImageElement ? result.src : result?.src || result?.url; if (!imageUrl) throw new Error('Puter.js returned no image URL. Complete Puter sign-in if prompted.'); setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: [...conversation.messages, { id: crypto.randomUUID(), role: 'assistant', content: `![Generated image](${imageUrl})`, imageUrl, createdAt: formatTime() }] } : conversation)) } catch (error) { console.error('[Cobalt image generation]', error); const reason = error instanceof Error ? error.message : 'Puter rejected the image request.'; setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: [...conversation.messages, { id: crypto.randomUUID(), role: 'assistant', content: `Image generation could not start: ${reason}`, createdAt: formatTime() }] } : conversation)) } }
+  const saveAccount = (next: { name: string; email: string }) => { setAccount(next); localStorage.setItem(ACCOUNT_STORAGE, JSON.stringify(next)); setWalkthroughOpen(true); setAccountOpen(false) }
+  const completeWalkthrough = () => { localStorage.setItem(TOUR_STORAGE, 'true'); setWalkthroughOpen(false) }
+  const addEmail = (kind: 'beta' | 'developer', email: string) => { const normalized = email.trim().toLowerCase(); if (!normalized.includes('@')) return; const setter = kind === 'beta' ? setBetaEmails : setDeveloperEmails; setter((current) => current.includes(normalized) ? current : [...current, normalized]) }
+  const removeEmail = (kind: 'beta' | 'developer', email: string) => { const setter = kind === 'beta' ? setBetaEmails : setDeveloperEmails; setter((current) => current.filter((entry) => entry !== email)) }
   const signOut = () => { setAccount(null); localStorage.removeItem(ACCOUNT_STORAGE); setAccountOpen(false) }
   const initials = account ? account.name.split(' ').map((part) => part[0]).slice(0, 2).join('').toUpperCase() : 'JD'
   if (!account) return <OnboardingPanel onSave={saveAccount} />
+  if (walkthroughOpen) return <WalkthroughPanel access={access} onComplete={completeWalkthrough} />
   return <div className={`app-shell ${darkMode ? 'dark-mode' : ''}`}><OfflineBanner online={online} /><div className="app-layout"><div className={`sidebar-wrap ${sidebarOpen ? 'open' : ''}`}><Sidebar conversations={conversations} activeId={activeId} apiKey={apiKey} onApiKeyChange={setApiKey} onNewChat={newChat} onSelectChat={setActiveId} onDeleteChat={deleteChat} onClearHistory={clearHistory} product={product} onProductChange={setProduct} /></div><main className="workspace"><header className="topbar"><button className="icon-button mobile-menu" onClick={() => setSidebarOpen(!sidebarOpen)} title="Toggle navigation"><Menu size={18} /></button><button className="icon-button desktop-menu" onClick={() => setSidebarOpen(!sidebarOpen)} title="Collapse sidebar"><PanelLeftClose size={17} /></button><div className="topbar-title"><span>COBALT {product === 'code' ? 'CODE' : 'AI'} WORKSPACE</span><strong>{product === 'code' ? 'Cobalt Code' : 'Cobalt AI'}</strong></div><div className="topbar-actions">{installPrompt && <button className="install-button" onClick={async () => { await installPrompt.prompt(); setInstallPrompt(null) }}>Install app</button>}<span className={`access-pill ${access.isDeveloper || access.isBetaTester ? 'selected' : ''}`}>{access.isDeveloper ? 'Developer' : access.isBetaTester ? 'Beta Tester' : 'Member'}</span><button className="icon-button" title="Notifications"><Bell size={17} /></button><button className="icon-button" title="Help"><HelpCircle size={17} /></button><button className="icon-button" title="Workspace settings" onClick={() => setSettingsOpen(true)}><Settings2 size={17} /></button><button className="user-chip" onClick={() => setAccountOpen(true)} title={`Open ${account.name}'s account`}>{initials}</button></div></header><ChatArea messages={activeConversation.messages} loading={loading} effort={effort} version={version} isDeveloper={access.isDeveloper} product={product} connected={online && serverConfigured} onEffortChange={setEffort} onVersionChange={setVersion} onSend={sendMessage} /></main></div>{accountOpen && <AccountPanel account={account} access={access} onSave={saveAccount} onSignOut={signOut} onClose={() => setAccountOpen(false)} />}{settingsOpen && <SettingsPanel darkMode={darkMode} defaultModel={defaultModel} systemPrompt={systemPrompt} onDarkModeChange={setDarkMode} onDefaultModelChange={(value) => { setDefaultModel(value); setVersion(value) }} onSystemPromptChange={setSystemPrompt} onClose={() => setSettingsOpen(false)} />}</div>
 }

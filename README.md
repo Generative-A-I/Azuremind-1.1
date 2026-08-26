@@ -70,6 +70,9 @@ For PWA installation, use the production preview over HTTPS or localhost. The br
 - **Cobalt Code:** Coding-focused chat with code-oriented prompts and model preferences.
 - **Models:** Cobalt versions map to different underlying provider models and fall back when a model is unavailable.
 - **Attachments:** Attach text/code files or images. Text contents are sent as model context; images use multimodal input.
+- **Image generation:** Use the image button in the composer. Image generation runs through the official Puter.js SDK, served through the local Vite proxy for forwarded-browser compatibility, and may ask the user to sign in or authorize Puter; no image API key is required.
+- **Interface styles:** Switch between Classic and Modern in Workspace settings.
+- **Walkthrough:** New accounts receive a required feature and access-benefits tour before entering the workspace.
 - **Markdown:** Tables, lists, inline code, fenced code blocks, and copy buttons.
 - **Thinking:** Supported `<think>` and `<thinking>` output is hidden from the answer and shown in a collapsed audit panel.
 - **History:** Conversations are stored locally in the browser and can be deleted individually or cleared together.

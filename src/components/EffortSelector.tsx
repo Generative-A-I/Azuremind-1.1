@@ -12,7 +12,7 @@ export function EffortSelector({ value, onChange }: Props) {
       <span className="sr-only">Effort Level</span>
       <SlidersHorizontal size={15} aria-hidden="true" />
       <select value={value} onChange={(event) => onChange(event.target.value as EffortLevel)} aria-label="Effort Level">
-        {(['Extra', 'High', 'Normal', 'Low'] as EffortLevel[]).map((level) => <option key={level} value={level}>{level} effort</option>)}
+        {(['Deep Think', 'Extra', 'High', 'Normal', 'Low'] as EffortLevel[]).map((level) => <option key={level} value={level}>{level}</option>)}
       </select>
     </label>
   )

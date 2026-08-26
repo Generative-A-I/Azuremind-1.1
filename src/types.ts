@@ -1,4 +1,4 @@
-export type EffortLevel = 'Extra' | 'High' | 'Normal' | 'Low'
+export type EffortLevel = 'Deep Think' | 'Extra' | 'High' | 'Normal' | 'Low'
 export type AzuremindVersion = '1.0' | '1.1' | '1.2' | '2.0' | 'dev'
 
 export type Message = {
@@ -7,6 +7,7 @@ export type Message = {
   content: string
   thinking?: string
   createdAt: string
+  imageUrl?: string
 }
 
 export type AttachmentPayload = {
