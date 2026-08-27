@@ -48,11 +48,6 @@ export default defineConfig(({ mode }) => {
         rewrite: () => '/openai/v1/models',
         configure: (proxy) => logProxyErrors(proxy, 'azuremind models', serverKey),
       },
-      '/puter-sdk': {
-        target: 'https://js.puter.com',
-        changeOrigin: true,
-        rewrite: () => '/v2/',
-      },
       '/api/azuremind': {
         target: 'https://api.groq.com',
         changeOrigin: true,

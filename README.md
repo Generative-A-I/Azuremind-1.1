@@ -20,9 +20,10 @@ Create a `.env` file in the project root:
 
 ```env
 GROQ_API_KEY=your_rotated_api_key
+VITE_PUTER_AUTH_TOKEN=your_puter_auth_token
 ```
 
-The key is used by the Vite development proxy and is never sent to the browser. Do not commit `.env`.
+The Groq key is used by the Vite development proxy and is never sent to the browser. The Puter token is supplied to the browser client for image generation, so use a token scoped for this app and do not commit `.env`.
 
 ## Run locally
 
@@ -70,7 +71,7 @@ For PWA installation, use the production preview over HTTPS or localhost. The br
 - **Cobalt Code:** Coding-focused chat with code-oriented prompts and model preferences.
 - **Models:** Cobalt versions map to different underlying provider models and fall back when a model is unavailable.
 - **Attachments:** Attach text/code files or images. Text contents are sent as model context; images use multimodal input.
-- **Image generation:** Use the image button in the composer. Image generation runs through the official Puter.js SDK, served through the local Vite proxy for forwarded-browser compatibility, and may ask the user to sign in or authorize Puter; no image API key is required.
+- **Image generation:** Use the image button in the composer. Image generation runs through the official Puter.js SDK with the configured `VITE_PUTER_AUTH_TOKEN`; users do not need to sign in interactively.
 - **Interface styles:** Switch between Classic and Modern in Workspace settings.
 - **Walkthrough:** New accounts receive a required feature and access-benefits tour before entering the workspace.
 - **Markdown:** Tables, lists, inline code, fenced code blocks, and copy buttons.

@@ -1,19 +1,22 @@
-import { ArrowUp, Bot, ChevronDown, Copy, ImagePlus, Paperclip, Sparkles, User } from 'lucide-react'
+import { ArrowUp, Bot, ChevronDown, Copy, ImagePlus, Mic, Paperclip, Sparkles, User } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import type { ChangeEvent, ReactNode } from 'react'
-import ReactMarkdown from 'react-markdown'
+import type { ChangeEvent, ComponentProps, ReactNode } from 'react'
+import MarkdownRenderer from 'react-markdown'
 import type { AttachmentPayload, AzuremindVersion, EffortLevel, Message } from '../types'
 import { EffortSelector } from './EffortSelector'
 import { ModelSelector } from './ModelSelector'
+import { ReleaseNotice } from './ReleaseNotice'
 
-type Props = { messages: Message[]; loading: boolean; effort: EffortLevel; version: AzuremindVersion; connected: boolean; isDeveloper: boolean; product?: 'chat' | 'code'; onEffortChange: (value: EffortLevel) => void; onVersionChange: (value: AzuremindVersion) => void; onSend: (text: string, attachment?: AttachmentPayload) => void; onGenerateImage?: (prompt: string) => void }
+type Props = { messages: Message[]; loading: boolean; effort: EffortLevel; version: AzuremindVersion; connected: boolean; isDeveloper: boolean; userName?: string; product?: 'chat' | 'code'; onEffortChange: (value: EffortLevel) => void; onVersionChange: (value: AzuremindVersion) => void; onSend: (text: string, attachment?: AttachmentPayload) => void; onGenerateImage?: (prompt: string) => void }
 
-export function ChatArea({ messages, loading, effort, version, connected, isDeveloper, product = 'chat', onEffortChange, onVersionChange, onSend, onGenerateImage = (prompt) => window.dispatchEvent(new CustomEvent('cobalt-generate-image', { detail: prompt })) }: Props) {
+export function ChatArea({ messages, loading, effort, version, connected, isDeveloper, userName = (JSON.parse(localStorage.getItem('azuremind-account') || 'null')?.name || 'there').split(' ')[0], product = 'chat', onEffortChange, onVersionChange, onSend, onGenerateImage = (prompt) => window.dispatchEvent(new CustomEvent('cobalt-generate-image', { detail: prompt })) }: Props) {
   const [draft, setDraft] = useState('')
   const [attachment, setAttachment] = useState<File | null>(null)
   const [attachmentPreview, setAttachmentPreview] = useState('')
   const [imageStudioOpen, setImageStudioOpen] = useState(false)
   const [imagePrompt, setImagePrompt] = useState('')
+  const [listening, setListening] = useState(false)
+  const [releaseNoticeOpen, setReleaseNoticeOpen] = useState(() => localStorage.getItem('cobalt-release-notice') === '2026-08-27-image-generation')
   const fileInput = useRef<HTMLInputElement>(null)
   const messageScroll = useRef<HTMLDivElement>(null)
   useEffect(() => { const element = messageScroll.current; if (element) element.scrollTo({ top: element.scrollHeight, behavior: loading ? 'auto' : 'smooth' }) }, [messages, loading])
@@ -39,8 +42,9 @@ export function ChatArea({ messages, loading, effort, version, connected, isDeve
     setAttachment(null)
   }
   const generateImage = () => { if (!imagePrompt.trim() || loading) return; onGenerateImage(imagePrompt.trim()); setImagePrompt(''); setImageStudioOpen(false) }
-  return <main className={`chat-area ${product === 'code' ? 'code-chat' : ''}`}>
-    <div className="chat-header"><div><div className="breadcrumb">Workspace <span>/</span> Conversations</div><h1>New conversation</h1></div><div className="header-status"><span className={`live-dot ${connected ? '' : 'disconnected'}`} /> {connected ? 'Cobalt AI online' : 'Setup required'}</div></div>
+  const voice = () => { const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition; if (!Recognition) { window.alert('Voice mode is not supported in this browser.'); return } const recognition = new Recognition(); recognition.lang = 'en-US'; recognition.onstart = () => setListening(true); recognition.onend = () => setListening(false); recognition.onerror = () => setListening(false); recognition.onresult = (event) => setDraft((current) => `${current}${current ? ' ' : ''}${event.results[0][0].transcript}`); recognition.start() }
+  return <main className={`chat-area ${product === 'code' ? 'code-chat' : ''}`}><button className={`voice-floating ${listening ? 'listening' : ''}`} title="Voice mode" onClick={voice}><Mic size={18} /></button>{releaseNoticeOpen && <ReleaseNotice onClose={() => { setReleaseNoticeOpen(false); localStorage.removeItem('cobalt-release-notice') }} />}
+    <div className="chat-header"><div><div className="breadcrumb">{product === 'code' ? 'Cobalt Code' : 'Cobalt AI'} <span>/</span> Conversations</div><h1>{product === 'code' ? 'What are we building?' : new Date().getHours() >= 15 ? `How are you doing after school, ${userName}?` : `How are you, ${userName}?`}</h1></div></div>
     <div className={`message-scroll ${product === 'code' ? 'code-message-scroll' : ''}`} ref={messageScroll}>
       {messages.length === 0 ? <div className="empty-state"><div className="empty-icon"><Sparkles size={23} /></div><p className="eyebrow">COBALT {product === 'code' ? 'CODE' : 'AI'} {version}</p><h2>{product === 'code' ? 'What are we building?' : 'How can we help today?'}</h2><p className="empty-copy">{product === 'code' ? 'Review code, debug an issue, or design a clean implementation with your coding workspace.' : 'Ask a question, review a document, or explore a new idea with your enterprise AI workspace.'}</p><div className="suggestions"><button onClick={() => setDraft(product === 'code' ? 'Review this code for bugs and suggest a fix' : 'Summarize the key risks in a project plan')}><span>01</span>{product === 'code' ? 'Review code for bugs' : 'Summarize project risks'}</button><button onClick={() => setDraft(product === 'code' ? 'Create a TypeScript component for this feature' : 'Draft a concise executive update')}><span>02</span>{product === 'code' ? 'Create a component' : 'Draft an executive update'}</button><button onClick={() => setDraft(product === 'code' ? 'Explain this function and improve its readability' : 'Help me structure a decision memo')}><span>03</span>{product === 'code' ? 'Explain a function' : 'Structure a decision memo'}</button></div></div> : messages.map((message) => { const thinking = [message.thinking, extractThinkingTags(message.content)].filter(Boolean).join('\n\n'); return <article className={`message ${message.role}`} key={message.id}><div className="avatar">{message.role === 'assistant' ? <Bot size={17} /> : <User size={16} />}</div><div className="message-body"><div className="message-meta"><strong>{message.role === 'assistant' ? `Cobalt ${product === 'code' ? 'Code' : 'AI'} ${version}` : 'You'}</strong><span>{message.createdAt}</span></div>{thinking && <ThinkingBlock content={thinking} />}{message.role === 'assistant' ? <div className="markdown"><ReactMarkdown components={{ code: MarkdownCode, img: MarkdownImage, pre: ({ children }) => <>{children}</> }}>{normalizeMarkdown(stripThinkingTags(message.content))}</ReactMarkdown></div> : <p className="user-content">{stripThinkingTags(message.content)}</p>}{message.role === 'assistant' && <button className="copy-button" title="Copy response" onClick={() => navigator.clipboard?.writeText(stripThinkingTags(message.content))}><Copy size={13} /> Copy</button>}</div></article>})}
       {loading && <div className="message assistant"><div className="avatar"><Bot size={17} /></div><div className="message-body"><div className="message-meta"><strong>Cobalt {product === 'code' ? 'Code' : 'AI'} {version}</strong><span>Working now</span></div><div className="thinking-loading"><span className="spinner" /> Thinking<span className="loading-dots">...</span></div></div></div>}
@@ -54,7 +58,11 @@ function readAsDataUrl(file: Blob): Promise<string> {
 }
 
 function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
-  return src ? <img src={src} alt={alt || 'Generated image'} /> : null
+  return src ? <img className="generated-image" src={src} alt={alt || 'Generated image'} onError={(event) => { event.currentTarget.alt = 'Generated image could not be loaded' }} /> : null
+}
+
+function ReactMarkdown(props: ComponentProps<typeof MarkdownRenderer>) {
+  return <MarkdownRenderer {...props} urlTransform={(url) => url} />
 }
 
 function ThinkingBlock({ content }: { content: string }) {
