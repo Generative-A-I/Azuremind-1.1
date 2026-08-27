@@ -1,6 +1,5 @@
 import { Component, useEffect, useState } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
-import { puter } from '@heyputer/puter.js'
 import { Bell, HelpCircle, Menu, PanelLeftClose, Settings2 } from 'lucide-react'
 import { AccountPanel } from './components/AccountPanel'
 import { ChatArea } from './components/ChatArea'
@@ -17,8 +16,6 @@ const API_KEY_STORAGE = 'azuremind-groq-key'
 const ACCOUNT_STORAGE = 'azuremind-account'
 const MODEL_CANDIDATES = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.6-27b', 'openai/gpt-oss-safeguard-20b']
 const VISION_MODEL_CANDIDATES = ['qwen/qwen3.6-27b']
-const IMAGE_MODEL = 'gpt-image-1'
-const PUTER_AUTH_TOKEN = import.meta.env.VITE_PUTER_AUTH_TOKEN?.trim() || ''
 const MODEL_BY_VERSION: Record<AzuremindVersion, string> = { '1.0': 'openai/gpt-oss-safeguard-20b', '1.1': 'openai/gpt-oss-120b', '1.2': 'qwen/qwen3.6-27b', '2.0': 'openai/gpt-oss-20b', dev: 'openai/gpt-oss-120b' }
 const CODE_MODEL_BY_VERSION: Record<AzuremindVersion, string> = { '1.0': 'qwen/qwen3.6-27b', '1.1': 'openai/gpt-oss-120b', '1.2': 'openai/gpt-oss-20b', '2.0': 'qwen/qwen3.6-27b', dev: 'openai/gpt-oss-120b' }
 const BETA_TESTER_EMAILS = ['chopp2979@inst.hcpss.org']
@@ -36,6 +33,26 @@ const identityPrompt = 'You are Cobalt AI, an independent AI application. You ar
 function formatTime(date = new Date()) { return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
 function readConversations(): Conversation[] { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') } catch { return [] } }
 let imageGenerationInFlight = false
+let puterLoad: Promise<NonNullable<Window['puter']>> | null = null
+function loadPuter(): Promise<NonNullable<Window['puter']>> {
+  if (window.puter?.ai?.txt2img) return Promise.resolve(window.puter)
+  if (puterLoad) return puterLoad
+  puterLoad = new Promise((resolve, reject) => {
+    const script = document.createElement('script')
+    const timeout = window.setTimeout(() => { puterLoad = null; reject(new Error('Puter.js took too long to load. Check your network or content blocker.')) }, 15000)
+    script.onload = () => { window.clearTimeout(timeout); window.setTimeout(() => window.puter?.ai?.txt2img ? resolve(window.puter) : reject(new Error('Puter.js loaded without its image API.')), 100) }
+    script.onerror = () => { window.clearTimeout(timeout); puterLoad = null; reject(new Error('Puter.js could not load. Check your network or content blocker.')) }
+    script.src = '/puter-sdk'
+    document.head.appendChild(script)
+  })
+  return puterLoad
+}
+async function ensurePuterSignedIn(puter: NonNullable<Window['puter']>) {
+  if (!puter.auth?.isSignedIn || !puter.auth.signIn) throw new Error('Puter sign-in is unavailable. Reload the page and try again.')
+  if (await puter.auth.isSignedIn()) return
+  await puter.auth.signIn()
+  if (!(await puter.auth.isSignedIn())) throw new Error('Puter sign-in was not completed.')
+}
 function chatErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
   const retrySeconds = message.match(/try again in\s+([\d.]+)s/i)?.[1]
@@ -210,7 +227,7 @@ export default function App() {
   }
   const clearHistory = () => { setConversations([]); setActiveId('') }
   const deleteChat = (id: string) => { console.info('[Azuremind chats] deleting conversation:', id); setConversations((current) => current.filter((conversation) => conversation.id !== id)); if (id === activeId) setActiveId('') }
-  const generateImage = async (prompt: string) => { if (imageGenerationInFlight) return; imageGenerationInFlight = true; const conversationId = activeId || crypto.randomUUID(); const userMessage: Message = { id: crypto.randomUUID(), role: 'user', content: `Create an image: ${prompt}`, createdAt: formatTime() }; setConversations((current) => activeId ? current.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: [...conversation.messages, userMessage] } : conversation) : [{ id: conversationId, title: `Image: ${prompt.slice(0, 28)}`, updatedAt: 'Just now', messages: [userMessage] }, ...current]); if (!activeId) setActiveId(conversationId); try { if (!PUTER_AUTH_TOKEN) throw new Error('Puter auth token is not configured. Add VITE_PUTER_AUTH_TOKEN to .env and restart the app.'); puter.setAuthToken(PUTER_AUTH_TOKEN); puter.quiet = true; const result = await puter.ai.txt2img(prompt, { model: IMAGE_MODEL }); const imageUrl = await resolveImageUrl(result); if (!imageUrl) throw new Error('Puter.js returned no image data.'); setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: [...conversation.messages, { id: crypto.randomUUID(), role: 'assistant', content: `![Generated image](${imageUrl})`, imageUrl, createdAt: formatTime() }] } : conversation)) } catch (error) { console.error('[Cobalt image generation]', error); const reason = error instanceof Error ? error.message : 'Puter rejected the image request. Check your connection and try again.'; setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: [...conversation.messages, { id: crypto.randomUUID(), role: 'assistant', content: `Image generation could not start: ${reason}`, createdAt: formatTime() }] } : conversation)) } finally { imageGenerationInFlight = false } }
+  const generateImage = async (prompt: string) => { if (imageGenerationInFlight) return; imageGenerationInFlight = true; const conversationId = activeId || crypto.randomUUID(); const userMessage: Message = { id: crypto.randomUUID(), role: 'user', content: `Create an image: ${prompt}`, createdAt: formatTime() }; setConversations((current) => activeId ? current.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: [...conversation.messages, userMessage] } : conversation) : [{ id: conversationId, title: `Image: ${prompt.slice(0, 28)}`, updatedAt: 'Just now', messages: [userMessage] }, ...current]); if (!activeId) setActiveId(conversationId); try { const puter = await loadPuter(); await ensurePuterSignedIn(puter); const result = await puter.ai?.txt2img?.(prompt); const imageUrl = await resolveImageUrl(result); if (!imageUrl) throw new Error('Puter.js returned no image data.'); setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: [...conversation.messages, { id: crypto.randomUUID(), role: 'assistant', content: `![Generated image](${imageUrl})`, imageUrl, createdAt: formatTime() }] } : conversation)) } catch (error) { console.error('[Cobalt image generation]', error); const reason = error instanceof Error ? error.message : 'Puter rejected the image request. Check your connection and try again.'; setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, messages: [...conversation.messages, { id: crypto.randomUUID(), role: 'assistant', content: `Image generation could not start: ${reason}`, createdAt: formatTime() }] } : conversation)) } finally { imageGenerationInFlight = false } }
   const saveAccount = (next: { name: string; email: string }) => { setAccount(next); localStorage.setItem(ACCOUNT_STORAGE, JSON.stringify(next)); setWalkthroughOpen(true); setAccountOpen(false) }
   const completeWalkthrough = () => { localStorage.setItem(TOUR_STORAGE, 'true'); setWalkthroughOpen(false) }
   const addEmail = (kind: 'beta' | 'developer', email: string) => { const normalized = email.trim().toLowerCase(); if (!normalized.includes('@')) return; const setter = kind === 'beta' ? setBetaEmails : setDeveloperEmails; setter((current) => current.includes(normalized) ? current : [...current, normalized]) }
